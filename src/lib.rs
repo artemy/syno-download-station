@@ -15,12 +15,12 @@
 //!
 //! ## Usage example
 //!
-//!```rust
+//! ```rust,no_run
 //! use anyhow::Result;
 //! use std::env;
 //! use syno_download_station::client::SynoDS;
 //!
-//! #[tokio::main]
+//! #[tokio::main(flavor = "current_thread")]
 //! async fn main() -> Result<()> {
 //!     let mut synods = {
 //!         let host = env::var("SYNOLOGY_HOST")?;
@@ -49,7 +49,6 @@
 //!     Ok(())
 //! }
 //! ```
-
 
 pub mod client;
 pub mod entities;
