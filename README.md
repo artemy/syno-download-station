@@ -11,13 +11,12 @@ A Rust client library for interacting with the Synology Download Station API. Ma
 ## Features
 
 - Authentication with Synology API
-- List and filter download tasks
+- List download tasks
 - Get detailed task information (status, progress, files, peers)
 - Create downloads from URLs/magnet links
 - Create downloads from torrent files
-- Control tasks (pause, resume, complete)
-Clear completed downloads
-- Human-readable file sizes, progress calculation and ETA
+- Control tasks (pause, resume, complete, delete)
+- Clear completed downloads
 
 ## Installation
 
