@@ -1,0 +1,10 @@
+# Exclude RustRover files
+.idea/
+# Exclude build files
+/target
+# Exclude requests environment
+*.private.env.json
+# Lock file is not important for libraries
+Cargo.lock
+# Any test files
+*.torrent

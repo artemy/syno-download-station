@@ -1,0 +1,161 @@
+### Login
+POST {{host}}/webapi/entry.cgi
+Content-Type: application/x-www-form-urlencoded
+
+api = SYNO.API.Auth &
+version = 7 &
+method = login &
+account = {{username}} &
+passwd = {{password}} &
+session = DownloadStation &
+format = sid
+
+> {%
+    client.global.set("sid", response.body.data.sid)
+%}
+
+### Get API Info
+POST {{host}}/webapi/entry.cgi
+Content-Type: application/x-www-form-urlencoded
+Accept: application/json
+
+api = SYNO.API.Info &
+version = 1 &
+method = query &
+query = all &
+_sid = {{sid}}
+
+### Get info
+POST {{host}}/webapi/entry.cgi
+Content-Type: application/x-www-form-urlencoded
+Accept: application/json
+
+api = SYNO.DownloadStation2.Package.Info &
+version = 2 &
+method = get &
+_sid = {{sid}}
+
+### Get download tasks
+POST {{host}}/webapi/entry.cgi
+Content-Type: application/x-www-form-urlencoded
+
+api = SYNO.DownloadStation2.Task &
+version = 2 &
+method = list &
+additional = ["transfer","tracker","peer","file","detail"] &
+_sid = {{sid}}
+
+### Get download task
+POST {{host}}/webapi/entry.cgi
+Content-Type: application/x-www-form-urlencoded
+
+api = SYNO.DownloadStation2.Task &
+version = 2 &
+method = get &
+id = dbid_001 &
+additional = ["detail","transfer"] &
+_sid = {{sid}}
+
+
+### Pause download task
+POST {{host}}/webapi/entry.cgi
+Content-Type: application/x-www-form-urlencoded
+
+api = SYNO.DownloadStation2.Task &
+version = 2 &
+method = pause &
+id = dbid_001 &
+_sid = {{sid}}
+
+### Resume download task
+POST {{host}}/webapi/entry.cgi
+Content-Type: application/x-www-form-urlencoded
+
+api = SYNO.DownloadStation2.Task &
+version = 2 &
+method = resume &
+id = 11 &
+_sid = {{sid}}
+
+### Delete download task
+POST {{host}}/webapi/entry.cgi
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+
+api = SYNO.DownloadStation2.Task &
+method = delete &
+version = 2 &
+id = dbid_001 &
+_sid = {{sid}}
+
+### Complete download task
+POST {{host}}/webapi/entry.cgi
+Content-Type: application/x-www-form-urlencoded
+
+api = SYNO.DownloadStation2.Task.Complete &
+version = 1 &
+method = start &
+id = dbid_001 &
+_sid = {{sid}}
+
+### Clear completed tasks
+POST {{host}}/webapi/entry.cgi
+Content-Type: application/x-www-form-urlencoded
+
+api = SYNO.DownloadStation2.Task &
+version = 2 &
+method = delete_condition &
+status = 5 &
+_sid = {{sid}}
+
+### Create download task from URL
+POST {{host}}/webapi/entry.cgi
+Content-Type: application/x-www-form-urlencoded
+
+api = SYNO.DownloadStation2.Task &
+version = 2 &
+method = create &
+type = "url" &
+destination = "common/downloads" &
+_sid = {{sid}} &
+url = "magnet:?xt=urn:btih:f0d8c74420b1f845c9b892e44cf595f79b56687b%26dn=archlinux-2025.04.01-x86_64.iso" &
+create_list = false
+
+
+### Create download task from File (Must use POST with multipart/form-data)
+POST {{host}}/webapi/entry.cgi?_sid={{sid}}
+Content-Type: multipart/form-data; boundary=syno
+
+--syno
+Content-Disposition: form-data; name="api"
+
+SYNO.DownloadStation2.Task
+--syno
+Content-Disposition: form-data; name="version"
+
+2
+--syno
+Content-Disposition: form-data; name="method"
+
+create
+--syno
+Content-Disposition: form-data; name="type"
+
+"file"
+--syno
+Content-Disposition: form-data; name="file"
+
+["torrent"]
+--syno
+Content-Disposition: form-data; name="destination"
+
+"common/downloads"
+--syno
+Content-Disposition: form-data; name="create_list"
+
+false
+--syno
+Content-Disposition: form-data; name="torrent"; filename="ubuntu-24.04.2-live-server-amd64.iso.torrent"
+Content-Type: application/octet-stream
+
+< ./ubuntu-24.04.2-live-server-amd64.iso.torrent
+--syno

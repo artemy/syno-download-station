@@ -1,0 +1,33 @@
+[package]
+name = "syno-download-station"
+version = "0.1.0"
+edition = "2024"
+description = "Rust client library for the Synology Download Station API"
+license = "MIT"
+authors = ["Artem Makarov"]
+readme = "README.md"
+repository = "https://github.com/artemy/syno-download-station"
+keywords = [
+    "synology",
+    "download-station"
+]
+rust-version = "1.86.0"
+include = [
+    "/src/**",
+    "/Cargo.toml",
+    "/LICENSE.md",
+    "/README.md"
+]
+
+[dependencies]
+reqwest = { version = "0.12.15", features = ["json", "multipart"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_repr = "0.1.20"
+chrono = { version = "0.4.40", features = ["serde"] }
+anyhow = "1.0.97"
+thiserror = "2.0.12"
+log = "0.4.27"
+byte-unit = "5.1.6"
+
+[dev-dependencies]
+tokio = { version = "1.44.2", features = ["macros"] }
