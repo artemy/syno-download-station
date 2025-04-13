@@ -1,8 +1,7 @@
 # Synology Download Station API Client
 
 [![test & release](https://img.shields.io/github/actions/workflow/status/artemy/syno-download-station/ci.yml?logo=github)](https://github.com/artemy/syno-download-station)
-[![Crates.io Version](https://img.shields.io/crates/v/syno-download-station?logo=rust)
-](https://crates.io/crates/syno-download-station)
+[![Crates.io Version](https://img.shields.io/crates/v/syno-download-station?logo=rust)](https://crates.io/crates/syno-download-station)
 [![docs.rs](https://img.shields.io/docsrs/syno-download-station?logo=docs.rs)](https://docs.rs/syno-download-station/latest/syno_download_station/)
 [![MIT License](https://img.shields.io/github/license/artemy/syno-download-station)](https://github.com/artemy/syno-download-station)
 
