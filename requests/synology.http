@@ -7,7 +7,6 @@ version = 7 &
 method = login &
 account = {{username}} &
 passwd = {{password}} &
-session = DownloadStation &
 format = sid
 
 > {%
@@ -115,9 +114,9 @@ api = SYNO.DownloadStation2.Task &
 version = 2 &
 method = create &
 type = "url" &
-destination = "common/downloads" &
+destination = common/downloads &
 _sid = {{sid}} &
-url = "magnet:?xt=urn:btih:f0d8c74420b1f845c9b892e44cf595f79b56687b%26dn=archlinux-2025.04.01-x86_64.iso" &
+url = magnet:?xt=urn:btih:f0d8c74420b1f845c9b892e44cf595f79b56687b%26dn=archlinux-2025.04.01-x86_64.iso &
 create_list = false
 
 

@@ -82,7 +82,7 @@ async fn main() -> Result<()> {
 An example CLI application is included in the examples directory. To run it:
 
 ```bash
-SYNOLOGY_HOST="https://your-synology-nas.local:1234" \
+SYNOLOGY_URL="https://your-synology-nas.local:1234" \
 SYNOLOGY_USERNAME="your-username" \
 SYNOLOGY_PASSWORD="your-password" \
 cargo run --example cli

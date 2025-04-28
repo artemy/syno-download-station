@@ -49,23 +49,26 @@ pub enum SynoError {
 
 /// Synology Download Station client
 pub struct SynoDS {
-    host: String,
+    url: String,
     username: String,
     password: String,
     client: Client,
     sid: String,
 }
 
+const DEFAULT_PARAMS: &[(&str, &str)] =
+    &[("api", "SYNO.DownloadStation2.Task"), ("version", "2")];
+
 impl SynoDS {
-    /// Creates a new `SynoDS` client with the given host, credentials and timeout
-    /// 
+    /// Creates a new `SynoDS` client with the given url, credentials and timeout
+    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - Username, password, or host URL is empty
-    /// - Host URL doesn't start with "http://" or "https://"
+    /// - URL doesn't start with "http://" or "https://"
     #[allow(clippy::needless_pass_by_value)]
-    pub fn new(host: String, username: String, password: String, timeout_ms: u64) -> Result<Self> {
+    pub fn new(url: String, username: String, password: String, timeout_ms: u64) -> Result<Self> {
         // Validate all required configuration parameters
         if username.is_empty() {
             return Err(Configuration("Username cannot be empty".into()).into());
@@ -75,25 +78,25 @@ impl SynoDS {
             return Err(Configuration("Password cannot be empty".into()).into());
         }
 
-        if host.is_empty() {
+        if url.is_empty() {
             return Err(Configuration("Host URL cannot be empty".into()).into());
         }
 
         // Validate host URL format
-        if !host.starts_with("http://") && !host.starts_with("https://") {
+        if !url.starts_with("http://") && !url.starts_with("https://") {
             return Err(Configuration(format!(
-                "Host URL must start with http:// or https://, got: {host}"
+                "Host URL must start with http:// or https://, got: {url}"
             ))
             .into());
         }
 
-        // Remove trailing slash from host if present
-        let host = host.trim_end_matches('/').to_string();
+        // Remove trailing slash from host URL if present
+        let url = url.trim_end_matches('/').to_string();
 
         let client = Self::create_client(timeout_ms);
 
         Ok(Self {
-            host,
+            url,
             username,
             password,
             client,
@@ -116,7 +119,7 @@ impl SynoDS {
     }
 
     /// Authorizes the client by getting a session ID
-    /// 
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -130,7 +133,6 @@ impl SynoDS {
             ("method", "login"),
             ("account", &self.username),
             ("passwd", &self.password),
-            ("session", "DownloadStation"),
             ("format", "sid"),
         ];
 
@@ -153,7 +155,7 @@ impl SynoDS {
     }
 
     /// Gets all Download Station tasks
-    /// 
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -162,13 +164,15 @@ impl SynoDS {
     /// - Response cannot be parsed
     /// - Session is invalid or expired
     pub async fn get_tasks(&self) -> Result<Tasks> {
-        let params = [
-            ("method", "list"),
-            ("additional", r#"["transfer","detail"]"#),
-        ];
+        let all_params = {
+            let mut params = DEFAULT_PARAMS.to_vec();
+            params.push(("method", "list"));
+            params.push(("additional", r#"["transfer","detail"]"#));
+            params
+        };
 
         let response = self
-            .make_api_request::<SynologyResponse<Tasks>>(&params)
+            .make_api_request::<SynologyResponse<Tasks>>(&all_params)
             .await
             .context("Failed to get tasks")?;
 
@@ -183,7 +187,7 @@ impl SynoDS {
     }
 
     /// Gets detailed information about specific task(s)
-    /// 
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -198,14 +202,16 @@ impl SynoDS {
         }
 
         let id_string = ids.join(",");
-        let params = [
-            ("method", "get"),
-            ("id", &id_string),
-            ("additional", r#"["transfer","detail"]"#),
-        ];
+        let all_params = {
+            let mut params = DEFAULT_PARAMS.to_vec();
+            params.push(("method", "get"));
+            params.push(("id", &id_string));
+            params.push(("additional", r#"["transfer","detail"]"#));
+            params
+        };
 
         let response = self
-            .make_api_request::<SynologyResponse<TaskInfo>>(&params)
+            .make_api_request::<SynologyResponse<TaskInfo>>(&all_params)
             .await
             .context("Failed to get task details")?;
 
@@ -226,7 +232,7 @@ impl SynoDS {
     }
 
     /// Creates a new download task from a URI (HTTP/HTTPS URL or magnet link)
-    /// 
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -268,17 +274,19 @@ impl SynoDS {
         debug!("Creating download task. URI: {uri}, Destination: {destination}");
 
         // Parameters for the create task API call
-        let params = [
-            ("method", "create"),
-            ("type", "\"url\""),
-            ("destination", &format!("\"{destination}\"")),
-            ("url", &format!("[\"{uri}\"]")),
-            ("create_list", "false"),
-        ];
+        let all_params = {
+            let mut params = DEFAULT_PARAMS.to_vec();
+            params.push(("method", "create"));
+            params.push(("type", "\"url\""));
+            params.push(("destination", destination));
+            params.push(("url", uri));
+            params.push(("create_list", "false"));
+            params
+        };
 
         // Use the make_api_request method to create the task via POST request
         let response = self
-            .make_api_request::<SynologyResponse<TaskCreated>>(&params)
+            .make_api_request::<SynologyResponse<TaskCreated>>(&all_params)
             .await
             .context("Failed to create download task")?;
 
@@ -292,7 +300,7 @@ impl SynoDS {
 
     /// Creates a new download task from a torrent file
     /// Uses multipart/form-data with POST for file uploads
-    /// 
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -351,7 +359,7 @@ impl SynoDS {
             .mime_str("application/x-bittorrent")
             .context("Failed to create file part")?;
 
-        // Create the multipart form based on the example in synology.http
+        // Create the multipart form
         let form = multipart::Form::new()
             .text("api", "SYNO.DownloadStation2.Task")
             .text("version", "2")
@@ -363,7 +371,7 @@ impl SynoDS {
             .part("torrent", file_part);
 
         // Create the URL for the API call with session ID
-        let url = format!("{}{}?_sid={}", self.host, API_PATH, self.sid);
+        let url = format!("{}{}?_sid={}", self.url, API_PATH, self.sid);
 
         // Make the POST request with the multipart form
         let client = &self.client;
@@ -392,7 +400,7 @@ impl SynoDS {
     }
 
     /// Pause a specific task
-    /// 
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -402,10 +410,15 @@ impl SynoDS {
     /// - Task cannot be paused (e.g., already paused or in a state that cannot be paused)
     /// - Session is invalid or expired
     pub async fn pause(&self, id: &str) -> Result<()> {
-        let params = [("method", "pause"), ("id", id)];
+        let all_params = {
+            let mut params = DEFAULT_PARAMS.to_vec();
+            params.push(("method", "pause"));
+            params.push(("id", id));
+            params
+        };
 
         let response = self
-            .make_api_request::<SynologyResponse<()>>(&params)
+            .make_api_request::<SynologyResponse<()>>(&all_params)
             .await
             .context("Failed to pause download task")?;
 
@@ -423,7 +436,7 @@ impl SynoDS {
     }
 
     /// Resume a specific task
-    /// 
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -434,10 +447,15 @@ impl SynoDS {
     /// - Session is invalid or expired
     /// - Response data is missing or invalid
     pub async fn resume(&self, id: &str) -> Result<TaskOperation> {
-        let params = [("method", "resume"), ("id", id)];
+        let all_params = {
+            let mut params = DEFAULT_PARAMS.to_vec();
+            params.push(("method", "resume"));
+            params.push(("id", id));
+            params
+        };
 
         let response = self
-            .make_api_request::<SynologyResponse<TaskOperation>>(&params)
+            .make_api_request::<SynologyResponse<TaskOperation>>(&all_params)
             .await
             .context("Failed to resume download task")?;
 
@@ -452,7 +470,7 @@ impl SynoDS {
     }
 
     /// Complete a specific task
-    /// 
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -486,7 +504,7 @@ impl SynoDS {
     }
 
     /// Delete a specific task
-    /// 
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -497,17 +515,18 @@ impl SynoDS {
     /// - Session is invalid or expired
     /// - Response data is missing or invalid
     pub async fn delete_task(&self, id: &str, force_complete: bool) -> Result<TaskOperation> {
-        let params = [
-            ("method", "delete"),
-            ("id", id),
-            (
-                "force_complete",
-                if force_complete { "true" } else { "false" },
-            ),
-        ];
+        let all_params = {
+            let mut params = DEFAULT_PARAMS.to_vec();
+            params.push(("method", "delete"));
+            params.push(("id", id));
+            if force_complete {
+                params.push(("force_complete", "true"));
+            }
+            params
+        };
 
         let response = self
-            .make_api_request::<SynologyResponse<TaskOperation>>(&params)
+            .make_api_request::<SynologyResponse<TaskOperation>>(&all_params)
             .await
             .context("Failed to delete download task")?;
 
@@ -522,7 +541,7 @@ impl SynoDS {
     }
 
     /// Clear completed tasks
-    /// 
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -531,13 +550,16 @@ impl SynoDS {
     /// - No completed tasks exist
     /// - Session is invalid or expired
     pub async fn clear_completed(&self) -> Result<()> {
-        let params = [
-            ("method", "delete_condition"),
-            ("status", &format!("{}", Finished as u8)[..]),
-        ];
+        let finished_index = (Finished as u8).to_string();
+        let all_params = {
+            let mut params = DEFAULT_PARAMS.to_vec();
+            params.push(("method", "delete_condition"));
+            params.push(("status", &finished_index));
+            params
+        };
 
         let response = self
-            .make_api_request::<SynologyResponse<()>>(&params)
+            .make_api_request::<SynologyResponse<()>>(&all_params)
             .await
             .context("Failed to clear completed tasks")?;
 
@@ -553,20 +575,14 @@ impl SynoDS {
     where
         R: for<'de> serde::Deserialize<'de>,
     {
-        let params = [
-            &[("api", "SYNO.DownloadStation2.Task"), ("version", "2")],
-            params,
-        ]
-        .concat();
-
         // Create combined parameters with session ID if needed
-        let mut all_params = params;
+        let mut all_params = params.to_vec();
         if !self.sid.is_empty() {
             all_params.push(("_sid", &self.sid));
         }
 
         // Build the base URL
-        let base_url = format!("{}{}", self.host, API_PATH);
+        let base_url = format!("{}{}", self.url, API_PATH);
         debug!(
             "Making API request to: {} with {} parameters",
             base_url,
@@ -608,7 +624,7 @@ impl SynoDS {
 /// Builder for [`SynoDS`] client
 #[derive(Default)]
 pub struct SynoDSBuilder {
-    host: Option<String>,
+    url: Option<String>,
     username: Option<String>,
     password: Option<String>,
     timeout: Option<u64>,
@@ -617,8 +633,8 @@ pub struct SynoDSBuilder {
 impl SynoDSBuilder {
     /// Sets the host URL
     #[must_use]
-    pub fn host(mut self, host: impl Into<String>) -> Self {
-        self.host = Some(host.into());
+    pub fn url(mut self, url: impl Into<String>) -> Self {
+        self.url = Some(url.into());
         self
     }
 
@@ -644,16 +660,16 @@ impl SynoDSBuilder {
     }
 
     /// Builds the [`SynoDS`] client
-    /// 
+    ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - Required fields (host, username, password) are not provided
+    /// - Required fields (url, username, password) are not provided
     /// - Host URL doesn't start with "http://" or "https://"
     /// - Any field contains invalid data
     pub fn build(self) -> Result<SynoDS> {
-        let host = self
-            .host
+        let url = self
+            .url
             .ok_or_else(|| Configuration("Host URL is required".into()))?;
         let username = self
             .username
@@ -664,7 +680,7 @@ impl SynoDSBuilder {
 
         let timeout = self.timeout.unwrap_or(3000);
 
-        let client = SynoDS::new(host, username, password, timeout)?;
+        let client = SynoDS::new(url, username, password, timeout)?;
 
         Ok(client)
     }

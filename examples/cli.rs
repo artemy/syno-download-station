@@ -5,11 +5,11 @@ use syno_download_station::client::SynoDS;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {
     let mut synods = {
-        let host = env::var("SYNOLOGY_HOST")?;
+        let url = env::var("SYNOLOGY_URL")?;
         let username = env::var("SYNOLOGY_USERNAME")?;
         let password = env::var("SYNOLOGY_PASSWORD")?;
         SynoDS::builder()
-            .host(host)
+            .url(url)
             .username(username)
             .password(password)
             .build()?
