@@ -1,0 +1,66 @@
+{
+  "data": {
+    "task": [
+      {
+        "id": "task_id_1",
+        "username": "test",
+        "type": "bt",
+        "title": "Test Torrent 1",
+        "size": 1073741824,
+        "status": 5,
+        "additional": {
+          "detail": {
+            "completed_time": 1609459200,
+            "connected_leechers": 0,
+            "connected_peers": 0,
+            "connected_seeders": 0,
+            "created_time": 1609459100,
+            "destination": "/downloads",
+            "seed_elapsed": 0,
+            "started_time": 1609459150,
+            "total_peers": 0,
+            "total_pieces": 1024,
+            "uri": "magnet:?xt=urn:btih:test1",
+            "waiting_seconds": 0
+          },
+          "transfer": {
+            "downloaded_pieces": 1024,
+            "size_downloaded": 1073741824,
+            "size_uploaded": 0,
+            "speed_download": 0,
+            "speed_upload": 0
+          },
+          "file": [
+            {
+              "filename": "test_file_1.mp4",
+              "index": 0,
+              "priority": "normal",
+              "size": 1073741824,
+              "size_downloaded": 1073741824,
+              "wanted": true
+            }
+          ],
+          "peer": [
+            {
+              "address": "192.168.1.100:12345",
+              "agent": "uTorrent/3.5.5",
+              "progress": 1.0,
+              "speed_download": 0,
+              "speed_upload": 0
+            }
+          ],
+          "tracker": [
+            {
+              "peers": 10,
+              "seeds": 5,
+              "status": "success",
+              "update_timer": 300,
+              "url": "udp://tracker.example.com:80/announce"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "success": true
+}

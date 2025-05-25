@@ -1,0 +1,11 @@
+{
+  "data": {
+    "account": "test",
+    "device_id": "123",
+    "ik_message": "",
+    "is_portal_port": false,
+    "sid": "456",
+    "synotoken": "--------"
+  },
+  "success": true
+}

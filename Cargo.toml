@@ -1,6 +1,6 @@
 [package]
 name = "syno-download-station"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Rust client library for the Synology Download Station API"
 license = "MIT"
@@ -31,3 +31,5 @@ byte-unit = "5.1.6"
 
 [dev-dependencies]
 tokio = { version = "1.44.2", features = ["macros"] }
+wiremock = "0.6.3"
+form_urlencoded = "1.2.1"

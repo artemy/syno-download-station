@@ -1,4 +1,6 @@
-use crate::client::SynoError::*;
+use crate::client::SynoError::{
+    Api, Auth, Configuration, InvalidInput, InvalidResponse, TaskModification,
+};
 use crate::entities::TaskStatus::Finished;
 use crate::entities::{
     AuthData, SynologyResponse, TaskCompleted, TaskCreated, TaskInfo, TaskOperation, Tasks,
@@ -56,8 +58,7 @@ pub struct SynoDS {
     sid: String,
 }
 
-const DEFAULT_PARAMS: &[(&str, &str)] =
-    &[("api", "SYNO.DownloadStation2.Task"), ("version", "2")];
+const DEFAULT_PARAMS: &[(&str, &str)] = &[("api", "SYNO.DownloadStation2.Task"), ("version", "2")];
 
 impl SynoDS {
     /// Creates a new `SynoDS` client with the given url, credentials and timeout
@@ -152,6 +153,11 @@ impl SynoDS {
         } else {
             Err(InvalidResponse("Failed to authenticate".into()).into())
         }
+    }
+
+    #[must_use]
+    pub fn is_authorized(&self) -> bool {
+        !self.sid.is_empty()
     }
 
     /// Gets all Download Station tasks
@@ -444,7 +450,7 @@ impl SynoDS {
     /// - API returns an error response
     /// - Task ID is invalid
     /// - Task cannot be resumed (e.g., not paused or in a state that cannot be resumed)
-    /// - Session is invalid or expired
+    /// - Session is invalid, or expired
     /// - Response data is missing or invalid
     pub async fn resume(&self, id: &str) -> Result<TaskOperation> {
         let all_params = {
@@ -478,7 +484,7 @@ impl SynoDS {
     /// - API returns an error response
     /// - Task ID is invalid
     /// - Task cannot be completed (e.g., in a state that cannot be completed)
-    /// - Session is invalid or expired
+    /// - Session is invalid, or expired
     /// - Response data is missing or invalid
     pub async fn complete(&self, id: &str) -> Result<TaskCompleted> {
         let params = [
@@ -512,7 +518,7 @@ impl SynoDS {
     /// - API returns an error response
     /// - Task ID is invalid
     /// - Task cannot be deleted (e.g., in a state that prevents deletion)
-    /// - Session is invalid or expired
+    /// - Session is invalid, or expired
     /// - Response data is missing or invalid
     pub async fn delete_task(&self, id: &str, force_complete: bool) -> Result<TaskOperation> {
         let all_params = {

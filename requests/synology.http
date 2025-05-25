@@ -78,7 +78,7 @@ _sid = {{sid}}
 
 ### Delete download task
 POST {{host}}/webapi/entry.cgi
-Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+Content-Type: application/x-www-form-urlencoded
 
 api = SYNO.DownloadStation2.Task &
 method = delete &
