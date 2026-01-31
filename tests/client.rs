@@ -105,7 +105,7 @@ async fn test_get_tasks() {
         ("api", "SYNO.DownloadStation2.Task"),
         ("version", "2"),
         ("method", "list"),
-        ("additional", r#"["transfer","detail"]"#),
+        ("additional", r#"["transfer","tracker","peer","file","detail"]"#),
     ];
 
     create_api_mock(&mut server, params, "test-files/get_tasks_success.json").await;
@@ -137,7 +137,7 @@ async fn test_get_task() {
         ("version", "2"),
         ("method", "get"),
         ("id", task_id),
-        ("additional", r#"["transfer","detail"]"#),
+        ("additional", r#"["transfer","tracker","peer","file","detail"]"#),
     ];
 
     create_api_mock(&mut server, params, "test-files/get_task_success.json").await;
