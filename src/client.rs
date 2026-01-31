@@ -173,7 +173,7 @@ impl SynoDS {
         let all_params = {
             let mut params = DEFAULT_PARAMS.to_vec();
             params.push(("method", "list"));
-            params.push(("additional", r#"["transfer","detail"]"#));
+            params.push(("additional", r#"["transfer","tracker","peer","file","detail"]"#));
             params
         };
 
@@ -212,7 +212,7 @@ impl SynoDS {
             let mut params = DEFAULT_PARAMS.to_vec();
             params.push(("method", "get"));
             params.push(("id", &id_string));
-            params.push(("additional", r#"["transfer","detail"]"#));
+            params.push(("additional", r#"["transfer","tracker","peer","file","detail"]"#));
             params
         };
 
