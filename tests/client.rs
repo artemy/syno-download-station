@@ -45,11 +45,7 @@ async fn create_login_mock(server: &mut MockServer) {
 }
 
 // Helper function to create a mock for any API call
-async fn create_api_mock(
-    server: &mut MockServer,
-    params: Vec<(&str, &str)>,
-    response_file: &str,
-) {
+async fn create_api_mock(server: &mut MockServer, params: Vec<(&str, &str)>, response_file: &str) {
     // Create a mock on the server.
     let mut builder = Mock::given(method("POST"))
         .and(path("/webapi/entry.cgi"))
@@ -105,7 +101,10 @@ async fn test_get_tasks() {
         ("api", "SYNO.DownloadStation2.Task"),
         ("version", "2"),
         ("method", "list"),
-        ("additional", r#"["transfer","tracker","peer","file","detail"]"#),
+        (
+            "additional",
+            r#"["transfer","tracker","peer","file","detail"]"#,
+        ),
     ];
 
     create_api_mock(&mut server, params, "test-files/get_tasks_success.json").await;
@@ -137,7 +136,10 @@ async fn test_get_task() {
         ("version", "2"),
         ("method", "get"),
         ("id", task_id),
-        ("additional", r#"["transfer","tracker","peer","file","detail"]"#),
+        (
+            "additional",
+            r#"["transfer","tracker","peer","file","detail"]"#,
+        ),
     ];
 
     create_api_mock(&mut server, params, "test-files/get_task_success.json").await;

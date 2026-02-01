@@ -16,7 +16,7 @@
 //! - Create downloads from torrent files
 //! - Control tasks (pause, resume, complete)
 //! - Clear completed downloads
-//! - Human-readable file sizes, progress calculation and ETA
+//! - Human-readable file sizes, progress and ratio calculation and ETA
 //!
 //! ## Usage example
 //!
@@ -48,8 +48,7 @@
 //!         );
 //!     }
 //!
-//!     let operation = synods.clear_completed().await?;
-//!     println!("operation result: {:?}", operation);
+//!     synods.clear_completed().await?;
 //!
 //!     Ok(())
 //! }
