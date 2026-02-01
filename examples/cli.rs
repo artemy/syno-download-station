@@ -25,8 +25,7 @@ async fn main() -> Result<()> {
         );
     }
 
-    let operation = synods.clear_completed().await?;
-    println!("operation result: {:?}", operation);
+    synods.clear_completed().await?;
 
     Ok(())
 }
