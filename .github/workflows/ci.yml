@@ -17,7 +17,7 @@ jobs:
         run: cargo test
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features -- -Dclippy::all -Dclippy::pedantic
-      - name: Run Clippy
+      - name: Run rustfmt
         run: cargo fmt -- --check
 
   release:

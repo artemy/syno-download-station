@@ -377,7 +377,7 @@ async fn test_clear_completed() {
         params,
         "test-files/clear_completed_success.json",
     )
-        .await;
+    .await;
 
     let result = synods.clear_completed().await;
 

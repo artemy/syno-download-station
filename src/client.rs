@@ -8,7 +8,7 @@ use crate::entities::{
 use anyhow::{Context, Result};
 use log::debug;
 use reqwest::multipart::Part;
-use reqwest::{multipart, Client};
+use reqwest::{Client, multipart};
 use std::env;
 use std::time::Duration;
 use thiserror::Error;
