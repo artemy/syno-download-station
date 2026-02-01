@@ -75,15 +75,15 @@ impl Task {
             .unwrap_or_default()
     }
 
-    // Calculates download/upload ratio, returns f64, so later sorting is possible based on ratios
-    // Formatting can be done when printing the result
+    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+    #[must_use]
     pub fn calculate_ratio(&self) -> f64 {
-        let transfer = self.additional.as_ref().and_then(|a| a.transfer.as_ref());
-
-        match transfer {
-            Some(t) if t.size_downloaded != 0 => t.size_uploaded as f64 / t.size_downloaded as f64,
-            _ => 0.0,
-        }
+        self.additional
+            .as_ref()
+            .and_then(|a| a.transfer.as_ref())
+            .filter(|a| a.size_downloaded > 0)
+            .map(|t| t.size_uploaded as f64 / t.size_downloaded as f64)
+            .unwrap_or_default()
     }
 }
 
@@ -116,6 +116,7 @@ pub fn convert_time_left(input: i64) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::unreadable_literal, clippy::float_cmp)]
 mod tests {
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
@@ -155,8 +156,20 @@ mod tests {
         assert_eq!("(98.77 KB/s)", task.calculate_speed());
         // Test with uploading
         task.status = Seeding;
-        task.additional.as_mut().unwrap().transfer.as_mut().unwrap().speed_download = 0;
-        task.additional.as_mut().unwrap().transfer.as_mut().unwrap().speed_upload = 45678;
+        task.additional
+            .as_mut()
+            .unwrap()
+            .transfer
+            .as_mut()
+            .unwrap()
+            .speed_download = 0;
+        task.additional
+            .as_mut()
+            .unwrap()
+            .transfer
+            .as_mut()
+            .unwrap()
+            .speed_upload = 45678;
         assert_eq!("(45.68 KB/s)", task.calculate_speed());
     }
 
