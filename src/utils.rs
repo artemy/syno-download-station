@@ -74,6 +74,17 @@ impl Task {
             .map(|time_left| format!("⏳Time left: {time_left}"))
             .unwrap_or_default()
     }
+
+    // Calculates download/upload ratio, returns f64, so later sorting is possible based on ratios
+    // Formatting can be done when printing the result
+    pub fn calculate_ratio(&self) -> f64 {
+        let transfer = self.additional.as_ref().and_then(|a| a.transfer.as_ref());
+
+        match transfer {
+            Some(t) if t.size_downloaded != 0 => t.size_uploaded as f64 / t.size_downloaded as f64,
+            _ => 0.0,
+        }
+    }
 }
 
 #[must_use]
@@ -155,4 +166,47 @@ mod tests {
         assert_eq!("⏳Time left: 3 h 28 m", task.calculate_time_left());
     }
 
+    #[test]
+    fn test_calculate_ratio() {
+        let mut task = Task::create_test_task();
+        // Test with uploading
+        task.status = Seeding;
+        task.additional
+            .as_mut()
+            .unwrap()
+            .transfer
+            .as_mut()
+            .unwrap()
+            .size_downloaded = 3191664632;
+        task.additional
+            .as_mut()
+            .unwrap()
+            .transfer
+            .as_mut()
+            .unwrap()
+            .size_uploaded = 2367251000;
+        assert_eq!(0.7416979140808425, task.calculate_ratio());
+    }
+
+    #[test]
+    fn test_calculate_ratio_when_ratio_is_zero() {
+        let mut task = Task::create_test_task();
+        // Test with uploading
+        task.status = Seeding;
+        task.additional
+            .as_mut()
+            .unwrap()
+            .transfer
+            .as_mut()
+            .unwrap()
+            .size_downloaded = 0;
+        task.additional
+            .as_mut()
+            .unwrap()
+            .transfer
+            .as_mut()
+            .unwrap()
+            .size_uploaded = 0;
+        assert_eq!(0.0, task.calculate_ratio());
+    }
 }
