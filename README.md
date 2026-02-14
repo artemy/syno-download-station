@@ -88,6 +88,10 @@ SYNOLOGY_PASSWORD="your-password" \
 cargo run --example cli
 ```
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for a list of changes.
+
 ## License
 
 This project is licensed under the MIT License — see the [LICENSE.md](LICENSE.md) file for details
