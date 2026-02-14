@@ -1,6 +1,4 @@
-use crate::client::SynoError::{
-    Api, Auth, Configuration, InvalidInput, InvalidResponse, TaskModification,
-};
+use crate::client::SynoError::{Api, Auth, Configuration, InvalidInput, InvalidResponse};
 use crate::entities::TaskStatus::Finished;
 use crate::entities::{
     AuthData, SynologyResponse, TaskCompleted, TaskCreated, TaskInfo, TaskOperation, Tasks,
@@ -12,14 +10,18 @@ use reqwest::{Client, multipart};
 use std::env;
 use std::time::Duration;
 use thiserror::Error;
+use tokio::sync::RwLock;
 
 const API_PATH: &str = "/webapi/entry.cgi";
 
+const SESSION_EXPIRED_CODE: i32 = 119;
+
 /// Custom error types for the [`SynoDS`] client
+#[non_exhaustive]
 #[derive(Error, Debug)]
 pub enum SynoError {
-    #[error("Authentication error: {0}")]
-    Auth(String),
+    #[error("Authentication error: {message}")]
+    Auth { code: Option<i32>, message: String },
 
     #[error("Synology API error: code={code}, message={message}")]
     Api { code: i32, message: String },
@@ -55,7 +57,7 @@ pub struct SynoDS {
     username: String,
     password: String,
     client: Client,
-    sid: String,
+    sid: RwLock<String>,
 }
 
 const DEFAULT_PARAMS: &[(&str, &str)] = &[("api", "SYNO.DownloadStation2.Task"), ("version", "2")];
@@ -101,7 +103,7 @@ impl SynoDS {
             username,
             password,
             client,
-            sid: String::new(),
+            sid: RwLock::new(String::new()),
         })
     }
 
@@ -127,7 +129,7 @@ impl SynoDS {
     /// - Network request fails
     /// - Authentication fails
     /// - Response cannot be parsed
-    pub async fn authorize(&mut self) -> Result<()> {
+    pub async fn authorize(&self) -> Result<()> {
         let params = [
             ("api", "SYNO.API.Auth"),
             ("version", "7"),
@@ -138,26 +140,35 @@ impl SynoDS {
         ];
 
         let response = self
-            .make_api_request::<SynologyResponse<AuthData>>(&params)
+            .make_raw_request::<SynologyResponse<AuthData>>(&params)
             .await
             .context("Failed to authorize")?;
 
         if response.success {
             match response.data {
                 Some(data) => {
-                    self.sid = data.sid;
+                    *self.sid.write().await = data.sid;
                     Ok(())
                 }
                 None => Err(InvalidResponse("No data received".into()).into()),
             }
+        } else if let Some(error) = response.error {
+            Err(Auth {
+                code: Some(error.code),
+                message: "Authentication failed".into(),
+            }
+            .into())
         } else {
-            Err(InvalidResponse("Failed to authenticate".into()).into())
+            Err(Auth {
+                code: None,
+                message: "Authentication failed, unknown error".into(),
+            }
+            .into())
         }
     }
 
-    #[must_use]
-    pub fn is_authorized(&self) -> bool {
-        !self.sid.is_empty()
+    pub async fn is_authorized(&self) -> bool {
+        !self.sid.read().await.is_empty()
     }
 
     /// Gets all Download Station tasks
@@ -181,7 +192,7 @@ impl SynoDS {
         };
 
         let response = self
-            .make_api_request::<SynologyResponse<Tasks>>(&all_params)
+            .make_api_request::<Tasks>(&all_params)
             .await
             .context("Failed to get tasks")?;
 
@@ -190,8 +201,14 @@ impl SynoDS {
                 Some(tasks) => Ok(tasks),
                 None => Err(InvalidResponse("No data received".into()).into()),
             }
+        } else if let Some(error) = response.error {
+            Err(Api {
+                code: error.code,
+                message: "Failed to get tasks".into(),
+            }
+            .into())
         } else {
-            Err(InvalidResponse("Failed to get tasks".into()).into())
+            Err(InvalidResponse("Failed to get tasks, unknown error".into()).into())
         }
     }
 
@@ -223,7 +240,7 @@ impl SynoDS {
         };
 
         let response = self
-            .make_api_request::<SynologyResponse<TaskInfo>>(&all_params)
+            .make_api_request::<TaskInfo>(&all_params)
             .await
             .context("Failed to get task details")?;
 
@@ -250,7 +267,6 @@ impl SynoDS {
     /// Returns an error if:
     /// - URI or destination is empty
     /// - URI doesn't start with http://, https://, or magnet:
-    /// - Session ID is not available (must call [`Self::authorize()`] first)
     /// - Network request fails
     /// - API returns an error response
     /// - Response cannot be parsed
@@ -275,14 +291,6 @@ impl SynoDS {
             .into());
         }
 
-        // Check if we have a session ID
-        if self.sid.is_empty() {
-            return Err(Auth(
-                "No session ID available. Make sure to call authorize() first".into(),
-            )
-            .into());
-        }
-
         debug!("Creating download task. URI: {uri}, Destination: {destination}");
 
         // Parameters for the create task API call
@@ -298,15 +306,21 @@ impl SynoDS {
 
         // Use the make_api_request method to create the task via POST request
         let response = self
-            .make_api_request::<SynologyResponse<TaskCreated>>(&all_params)
+            .make_api_request::<TaskCreated>(&all_params)
             .await
             .context("Failed to create download task")?;
 
         if response.success {
             debug!("Successfully created download task for URI: {uri}");
             Ok(())
+        } else if let Some(error) = response.error {
+            Err(Api {
+                code: error.code,
+                message: "Failed to create task".into(),
+            }
+            .into())
         } else {
-            Err(InvalidResponse("Failed to create task".into()).into())
+            Err(InvalidResponse("Failed to create task, unknown error".into()).into())
         }
     }
 
@@ -318,7 +332,6 @@ impl SynoDS {
     /// Returns an error if:
     /// - File data is empty
     /// - File name or destination is empty
-    /// - Session ID is not available (must call [`Self::authorize()`] first)
     /// - Network request fails
     /// - API returns an error response
     /// - Response cannot be parsed
@@ -342,14 +355,6 @@ impl SynoDS {
             return Err(InvalidInput("Destination path cannot be empty".into()).into());
         }
 
-        // Check if we have a session ID
-        if self.sid.is_empty() {
-            return Err(Auth(
-                "No session ID available. Make sure to call authorize() first".into(),
-            )
-            .into());
-        }
-
         // Basic file validation
         if !file_name.ends_with(".torrent") {
             debug!("Warning: File name does not end with .torrent extension: {file_name}");
@@ -362,39 +367,58 @@ impl SynoDS {
             destination
         );
 
-        // For file uploads, we must still use multipart/form-data POST request
-        // There's no way to upload files via GET request efficiently
+        let build_form = |sid: &str| -> Result<(String, multipart::Form)> {
+            let file_part = Part::bytes(file_data.to_vec())
+                .file_name(file_name.to_string())
+                .mime_str("application/x-bittorrent")
+                .context("Failed to create file part")?;
 
-        // Create the part for the torrent file
-        let file_part = Part::bytes(file_data.to_vec())
-            .file_name(file_name.to_string())
-            .mime_str("application/x-bittorrent")
-            .context("Failed to create file part")?;
+            let form = multipart::Form::new()
+                .text("api", "SYNO.DownloadStation2.Task")
+                .text("version", "2")
+                .text("method", "create")
+                .text("type", "\"file\"")
+                .text("file", "[\"torrent\"]")
+                .text("destination", format!("\"{destination}\""))
+                .text("create_list", "false")
+                .part("torrent", file_part);
 
-        // Create the multipart form
-        let form = multipart::Form::new()
-            .text("api", "SYNO.DownloadStation2.Task")
-            .text("version", "2")
-            .text("method", "create")
-            .text("type", "\"file\"")
-            .text("file", "[\"torrent\"]")
-            .text("destination", format!("\"{destination}\""))
-            .text("create_list", "false")
-            .part("torrent", file_part);
+            let url = format!("{}{}?_sid={}", self.url, API_PATH, sid);
+            Ok((url, form))
+        };
 
-        // Create the URL for the API call with session ID
-        let url = format!("{}{}?_sid={}", self.url, API_PATH, self.sid);
+        let send_multipart = |url: String, form: multipart::Form| async move {
+            self.client
+                .post(&url)
+                .multipart(form)
+                .send()
+                .await
+                .context("Failed to send file upload request")?
+                .json::<SynologyResponse<TaskCreated>>()
+                .await
+                .context("Failed to parse file upload response")
+        };
 
-        // Make the POST request with the multipart form
-        let client = &self.client;
-        let response = client
-            .post(&url)
-            .multipart(form)
-            .send()
-            .await
-            .context("Failed to send file upload request")?
-            .json::<SynologyResponse<TaskCreated>>()
-            .await?;
+        // First attempt
+        let sid = self.sid.read().await.clone();
+        let (url, form) = build_form(&sid)?;
+        let response = send_multipart(url, form).await?;
+
+        // Check for session expired
+        let response = if !response.success
+            && response
+                .error
+                .as_ref()
+                .is_some_and(|e| e.code == SESSION_EXPIRED_CODE)
+        {
+            debug!("Session expired during file upload, re-authorizing and retrying");
+            self.authorize().await?;
+            let sid = self.sid.read().await.clone();
+            let (url, form) = build_form(&sid)?;
+            send_multipart(url, form).await?
+        } else {
+            response
+        };
 
         // Handle the response
         if response.success {
@@ -430,7 +454,7 @@ impl SynoDS {
         };
 
         let response = self
-            .make_api_request::<SynologyResponse<()>>(&all_params)
+            .make_api_request::<()>(&all_params)
             .await
             .context("Failed to pause download task")?;
 
@@ -467,7 +491,7 @@ impl SynoDS {
         };
 
         let response = self
-            .make_api_request::<SynologyResponse<TaskOperation>>(&all_params)
+            .make_api_request::<TaskOperation>(&all_params)
             .await
             .context("Failed to resume download task")?;
 
@@ -476,8 +500,18 @@ impl SynoDS {
                 Some(task_operation) => Ok(task_operation),
                 None => Err(InvalidResponse("No data received".into()).into()),
             }
+        } else if let Some(error) = response.error {
+            Err(Api {
+                code: error.code,
+                message: format!("Failed to resume download task id: {}", &id),
+            }
+            .into())
         } else {
-            Err(TaskModification(format!("Failed to resume download task id: {}", &id)).into())
+            Err(InvalidResponse(format!(
+                "Failed to resume download task id: {}, unknown error",
+                &id
+            ))
+            .into())
         }
     }
 
@@ -501,7 +535,7 @@ impl SynoDS {
         ];
 
         let response = self
-            .make_api_request::<SynologyResponse<TaskCompleted>>(&params)
+            .make_api_request::<TaskCompleted>(&params)
             .await
             .context("Failed to complete download task")?;
 
@@ -510,8 +544,18 @@ impl SynoDS {
                 Some(task_completed) => Ok(task_completed),
                 None => Err(InvalidResponse("No data received".into()).into()),
             }
+        } else if let Some(error) = response.error {
+            Err(Api {
+                code: error.code,
+                message: format!("Failed to complete download task id: {}", &id),
+            }
+            .into())
         } else {
-            Err(TaskModification(format!("Failed to complete download task id: {}", &id)).into())
+            Err(InvalidResponse(format!(
+                "Failed to complete download task id: {}, unknown error",
+                &id
+            ))
+            .into())
         }
     }
 
@@ -538,7 +582,7 @@ impl SynoDS {
         };
 
         let response = self
-            .make_api_request::<SynologyResponse<TaskOperation>>(&all_params)
+            .make_api_request::<TaskOperation>(&all_params)
             .await
             .context("Failed to delete download task")?;
 
@@ -547,8 +591,18 @@ impl SynoDS {
                 Some(task_operation) => Ok(task_operation),
                 None => Err(InvalidResponse("No data received".into()).into()),
             }
+        } else if let Some(error) = response.error {
+            Err(Api {
+                code: error.code,
+                message: format!("Failed to delete download task id: {}", &id),
+            }
+            .into())
         } else {
-            Err(TaskModification(format!("Failed to delete download task id: {}", &id)).into())
+            Err(InvalidResponse(format!(
+                "Failed to delete download task id: {}, unknown error",
+                &id
+            ))
+            .into())
         }
     }
 
@@ -571,48 +625,46 @@ impl SynoDS {
         };
 
         let response = self
-            .make_api_request::<SynologyResponse<()>>(&all_params)
+            .make_api_request::<()>(&all_params)
             .await
             .context("Failed to clear completed tasks")?;
 
         if response.success {
             Ok(())
+        } else if let Some(error) = response.error {
+            Err(Api {
+                code: error.code,
+                message: "Failed to clear completed tasks".into(),
+            }
+            .into())
         } else {
-            Err(TaskModification("Failed to clear completed tasks".to_string()).into())
+            Err(InvalidResponse("Failed to clear completed tasks, unknown error".into()).into())
         }
     }
 
-    /// Makes a POST API request with form parameters
-    async fn make_api_request<R>(&self, params: &[(&str, &str)]) -> Result<R>
+    /// Makes a POST API request with form parameters (no sid, no retry).
+    /// Used by `authorize()` and as the base for `send_with_sid`.
+    async fn make_raw_request<R>(&self, params: &[(&str, &str)]) -> Result<R>
     where
         R: for<'de> serde::Deserialize<'de>,
     {
-        // Create combined parameters with session ID if needed
-        let mut all_params = params.to_vec();
-        if !self.sid.is_empty() {
-            all_params.push(("_sid", &self.sid));
-        }
-
-        // Build the base URL
         let base_url = format!("{}{}", self.url, API_PATH);
         debug!(
             "Making API request to: {} with {} parameters",
             base_url,
-            all_params.len()
+            params.len()
         );
 
-        // Send the POST request with form data
         let client = &self.client;
         let response = client
             .post(&base_url)
-            .form(&all_params)
+            .form(params)
             .send()
             .await
             .context("Failed to make API request")?;
 
         debug!("API request status: {}", response.status());
 
-        // Process the response
         let status = response.status();
         if !status.is_success() {
             return Err(Api {
@@ -630,6 +682,44 @@ impl SynoDS {
             .json::<R>()
             .await
             .context("Failed to parse API response".to_string())
+    }
+
+    /// Clones the sid from the `RwLock`, appends `_sid`, and calls `make_raw_request`.
+    async fn send_with_sid<D>(&self, params: &[(&str, &str)]) -> Result<SynologyResponse<D>>
+    where
+        D: for<'de> serde::Deserialize<'de>,
+    {
+        let sid = self.sid.read().await.clone();
+        let mut all_params = params.to_vec();
+        if !sid.is_empty() {
+            all_params.push(("_sid", &sid));
+        }
+        self.make_raw_request::<SynologyResponse<D>>(&all_params)
+            .await
+    }
+
+    /// Sends an API request with the session ID. On error code 119 (session expired),
+    /// transparently re-authorizes and retries once.
+    async fn make_api_request<D>(&self, params: &[(&str, &str)]) -> Result<SynologyResponse<D>>
+    where
+        D: for<'de> serde::Deserialize<'de>,
+    {
+        let response = self.send_with_sid::<D>(params).await?;
+
+        if !response.success
+            && response
+                .error
+                .as_ref()
+                .is_some_and(|e| e.code == SESSION_EXPIRED_CODE)
+        {
+            debug!(
+                "Session expired (error code {SESSION_EXPIRED_CODE}), re-authorizing and retrying"
+            );
+            self.authorize().await?;
+            return self.send_with_sid::<D>(params).await;
+        }
+
+        Ok(response)
     }
 }
 

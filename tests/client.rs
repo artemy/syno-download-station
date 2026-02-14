@@ -2,7 +2,7 @@ mod utils;
 
 use crate::utils::body_from_file;
 use std::fs;
-use syno_download_station::client::SynoDS;
+use syno_download_station::client::{SynoDS, SynoError};
 use utils::form_param;
 use wiremock::matchers::{header, header_regex, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -80,19 +80,19 @@ async fn create_file_upload_mock(server: &mut MockServer, response_file: &str) {
 
 #[tokio::test]
 async fn test_login() {
-    let (mut server, mut synods) = setup_client().await;
+    let (mut server, synods) = setup_client().await;
 
     create_login_mock(&mut server).await;
 
     synods.authorize().await.unwrap();
-    assert!(synods.is_authorized());
+    assert!(synods.is_authorized().await);
 
     server.verify().await;
 }
 
 #[tokio::test]
 async fn test_get_tasks() {
-    let (mut server, mut synods) = setup_client().await;
+    let (mut server, synods) = setup_client().await;
 
     create_login_mock(&mut server).await;
     synods.authorize().await.unwrap();
@@ -124,7 +124,7 @@ async fn test_get_tasks() {
 
 #[tokio::test]
 async fn test_get_task() {
-    let (mut server, mut synods) = setup_client().await;
+    let (mut server, synods) = setup_client().await;
 
     // First, we need to log in
     create_login_mock(&mut server).await;
@@ -185,7 +185,7 @@ async fn test_get_task() {
 
 #[tokio::test]
 async fn test_create_task() {
-    let (mut server, mut synods) = setup_client().await;
+    let (mut server, synods) = setup_client().await;
 
     create_login_mock(&mut server).await;
     synods.authorize().await.unwrap();
@@ -215,7 +215,7 @@ async fn test_create_task() {
 
 #[tokio::test]
 async fn test_create_task_from_file() {
-    let (mut server, mut synods) = setup_client().await;
+    let (mut server, synods) = setup_client().await;
 
     create_login_mock(&mut server).await;
     synods.authorize().await.unwrap();
@@ -242,7 +242,7 @@ async fn test_create_task_from_file() {
 
 #[tokio::test]
 async fn test_pause() {
-    let (mut server, mut synods) = setup_client().await;
+    let (mut server, synods) = setup_client().await;
 
     create_login_mock(&mut server).await;
     synods.authorize().await.unwrap();
@@ -268,7 +268,7 @@ async fn test_pause() {
 
 #[tokio::test]
 async fn test_resume() {
-    let (mut server, mut synods) = setup_client().await;
+    let (mut server, synods) = setup_client().await;
 
     create_login_mock(&mut server).await;
     synods.authorize().await.unwrap();
@@ -297,7 +297,7 @@ async fn test_resume() {
 
 #[tokio::test]
 async fn test_complete() {
-    let (mut server, mut synods) = setup_client().await;
+    let (mut server, synods) = setup_client().await;
 
     create_login_mock(&mut server).await;
     synods.authorize().await.unwrap();
@@ -327,7 +327,7 @@ async fn test_complete() {
 
 #[tokio::test]
 async fn test_delete_task() {
-    let (mut server, mut synods) = setup_client().await;
+    let (mut server, synods) = setup_client().await;
 
     create_login_mock(&mut server).await;
     synods.authorize().await.unwrap();
@@ -359,7 +359,7 @@ async fn test_delete_task() {
 
 #[tokio::test]
 async fn test_clear_completed() {
-    let (mut server, mut synods) = setup_client().await;
+    let (mut server, synods) = setup_client().await;
 
     create_login_mock(&mut server).await;
     synods.authorize().await.unwrap();
@@ -385,4 +385,320 @@ async fn test_clear_completed() {
 
     // Verify the operation was successful
     assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_session_expired_auto_retry() {
+    let (mut server, synods) = setup_client().await;
+
+    // Initial login
+    create_login_mock(&mut server).await;
+    synods.authorize().await.unwrap();
+
+    server.reset().await;
+
+    // Re-mount login mock for re-auth
+    create_login_mock(&mut server).await;
+
+    // Mount expired response (only matches once)
+    Mock::given(method("POST"))
+        .and(path("/webapi/entry.cgi"))
+        .and(header("content-type", "application/x-www-form-urlencoded"))
+        .and(form_param("api", "SYNO.DownloadStation2.Task"))
+        .and(form_param("method", "list"))
+        .and(form_param("_sid", "456"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .append_header("content-type", "application/json")
+                .set_body_string(body_from_file("test-files/session_expired.json")),
+        )
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+
+    // Mount success response for retry (matches after expired mock is exhausted)
+    Mock::given(method("POST"))
+        .and(path("/webapi/entry.cgi"))
+        .and(header("content-type", "application/x-www-form-urlencoded"))
+        .and(form_param("api", "SYNO.DownloadStation2.Task"))
+        .and(form_param("method", "list"))
+        .and(form_param("_sid", "456"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .append_header("content-type", "application/json")
+                .set_body_string(body_from_file("test-files/get_tasks_success.json")),
+        )
+        .mount(&server)
+        .await;
+
+    // Re-authorize after server reset
+    synods.authorize().await.unwrap();
+
+    let tasks = synods.get_tasks().await.unwrap();
+    assert_eq!(tasks.total, 2);
+}
+
+#[tokio::test]
+async fn test_session_expired_reauth_fails() {
+    let (mut server, synods) = setup_client().await;
+
+    // Initial login
+    create_login_mock(&mut server).await;
+    synods.authorize().await.unwrap();
+
+    server.reset().await;
+
+    // First call returns session expired
+    Mock::given(method("POST"))
+        .and(path("/webapi/entry.cgi"))
+        .and(header("content-type", "application/x-www-form-urlencoded"))
+        .and(form_param("api", "SYNO.DownloadStation2.Task"))
+        .and(form_param("method", "list"))
+        .and(form_param("_sid", "456"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .append_header("content-type", "application/json")
+                .set_body_string(body_from_file("test-files/session_expired.json")),
+        )
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+
+    // Re-auth fails (returns failure)
+    Mock::given(method("POST"))
+        .and(path("/webapi/entry.cgi"))
+        .and(header("content-type", "application/x-www-form-urlencoded"))
+        .and(form_param("api", "SYNO.API.Auth"))
+        .and(form_param("method", "login"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .append_header("content-type", "application/json")
+                .set_body_string(r#"{"success": false}"#),
+        )
+        .mount(&server)
+        .await;
+
+    let result = synods.get_tasks().await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_api_error_preserves_code() {
+    let (mut server, synods) = setup_client().await;
+
+    create_login_mock(&mut server).await;
+    synods.authorize().await.unwrap();
+
+    let params = vec![
+        ("api", "SYNO.DownloadStation2.Task"),
+        ("version", "2"),
+        ("method", "list"),
+        (
+            "additional",
+            r#"["transfer","tracker","peer","file","detail"]"#,
+        ),
+    ];
+
+    create_api_mock(&mut server, params, "test-files/api_error.json").await;
+
+    let result = synods.get_tasks().await;
+    assert!(result.is_err());
+
+    let err = result.unwrap_err();
+    let syno_err = err.downcast_ref::<SynoError>().expect("expected SynoError");
+    match syno_err {
+        SynoError::Api { code, .. } => assert_eq!(*code, 403),
+        other => panic!("Expected SynoError::Api, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_session_expired_file_upload_retry() {
+    let (mut server, synods) = setup_client().await;
+
+    // Initial login
+    create_login_mock(&mut server).await;
+    synods.authorize().await.unwrap();
+
+    server.reset().await;
+
+    // Re-mount login mock for re-auth
+    create_login_mock(&mut server).await;
+
+    // First file upload returns session expired
+    Mock::given(method("POST"))
+        .and(path("/webapi/entry.cgi"))
+        .and(header_regex("content-type", "multipart/form-data"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .append_header("content-type", "application/json")
+                .set_body_string(body_from_file("test-files/session_expired.json")),
+        )
+        .up_to_n_times(1)
+        .mount(&server)
+        .await;
+
+    // Retry succeeds
+    Mock::given(method("POST"))
+        .and(path("/webapi/entry.cgi"))
+        .and(header_regex("content-type", "multipart/form-data"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .append_header("content-type", "application/json")
+                .set_body_string(body_from_file(
+                    "test-files/create_task_from_file_success.json",
+                )),
+        )
+        .mount(&server)
+        .await;
+
+    let file_data = fs::read("test-files/test.torrent").expect("Failed to read test file");
+    let result = synods
+        .create_task_from_file(&file_data, "test.torrent", "/downloads")
+        .await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_auth_error_preserves_code() {
+    let (server, synods) = setup_client().await;
+
+    Mock::given(method("POST"))
+        .and(path("/webapi/entry.cgi"))
+        .and(header("content-type", "application/x-www-form-urlencoded"))
+        .and(form_param("api", "SYNO.API.Auth"))
+        .and(form_param("method", "login"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .append_header("content-type", "application/json")
+                .set_body_string(body_from_file("test-files/auth_error.json")),
+        )
+        .mount(&server)
+        .await;
+
+    let result = synods.authorize().await;
+    assert!(result.is_err());
+
+    let err = result.unwrap_err();
+    let syno_err = err.downcast_ref::<SynoError>().expect("expected SynoError");
+    match syno_err {
+        SynoError::Auth {
+            code: Some(400), ..
+        } => {}
+        other => panic!("Expected SynoError::Auth with code 400, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_create_task_error_preserves_code() {
+    let (mut server, synods) = setup_client().await;
+
+    create_login_mock(&mut server).await;
+    synods.authorize().await.unwrap();
+
+    let params = vec![
+        ("api", "SYNO.DownloadStation2.Task"),
+        ("version", "2"),
+        ("method", "create"),
+        ("type", "\"url\""),
+        ("destination", "/downloads"),
+        ("url", "https://example.com/test.iso"),
+        ("create_list", "false"),
+    ];
+
+    create_api_mock(&mut server, params, "test-files/api_error.json").await;
+
+    let result = synods
+        .create_task("https://example.com/test.iso", "/downloads")
+        .await;
+    assert!(result.is_err());
+
+    let err = result.unwrap_err();
+    let syno_err = err.downcast_ref::<SynoError>().expect("expected SynoError");
+    match syno_err {
+        SynoError::Api { code: 403, .. } => {}
+        other => panic!("Expected SynoError::Api with code 403, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_resume_error_preserves_code() {
+    let (mut server, synods) = setup_client().await;
+
+    create_login_mock(&mut server).await;
+    synods.authorize().await.unwrap();
+
+    let params = vec![
+        ("api", "SYNO.DownloadStation2.Task"),
+        ("version", "2"),
+        ("method", "resume"),
+        ("id", "task_id_1"),
+    ];
+
+    create_api_mock(&mut server, params, "test-files/api_error.json").await;
+
+    let result = synods.resume("task_id_1").await;
+    assert!(result.is_err());
+
+    let err = result.unwrap_err();
+    let syno_err = err.downcast_ref::<SynoError>().expect("expected SynoError");
+    match syno_err {
+        SynoError::Api { code: 403, .. } => {}
+        other => panic!("Expected SynoError::Api with code 403, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_delete_task_error_preserves_code() {
+    let (mut server, synods) = setup_client().await;
+
+    create_login_mock(&mut server).await;
+    synods.authorize().await.unwrap();
+
+    let params = vec![
+        ("api", "SYNO.DownloadStation2.Task"),
+        ("version", "2"),
+        ("method", "delete"),
+        ("id", "task_id_1"),
+    ];
+
+    create_api_mock(&mut server, params, "test-files/api_error.json").await;
+
+    let result = synods.delete_task("task_id_1", false).await;
+    assert!(result.is_err());
+
+    let err = result.unwrap_err();
+    let syno_err = err.downcast_ref::<SynoError>().expect("expected SynoError");
+    match syno_err {
+        SynoError::Api { code: 403, .. } => {}
+        other => panic!("Expected SynoError::Api with code 403, got: {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_clear_completed_error_preserves_code() {
+    let (mut server, synods) = setup_client().await;
+
+    create_login_mock(&mut server).await;
+    synods.authorize().await.unwrap();
+
+    let params = vec![
+        ("api", "SYNO.DownloadStation2.Task"),
+        ("version", "2"),
+        ("method", "delete_condition"),
+        ("status", "5"),
+    ];
+
+    create_api_mock(&mut server, params, "test-files/api_error.json").await;
+
+    let result = synods.clear_completed().await;
+    assert!(result.is_err());
+
+    let err = result.unwrap_err();
+    let syno_err = err.downcast_ref::<SynoError>().expect("expected SynoError");
+    match syno_err {
+        SynoError::Api { code: 403, .. } => {}
+        other => panic!("Expected SynoError::Api with code 403, got: {other:?}"),
+    }
 }
