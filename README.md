@@ -32,11 +32,11 @@ use syno_download_station::client::SynoDS;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Create a new client
-    let mut synods = SynoDS::new(
-        "https://your-synology-nas.local:5001".to_string(),
-        "username".to_string(),
-        "password".to_string(),
-    )?;
+    let synods = SynoDS::builder()
+        .url("https://your-synology-nas.local:5001")
+        .username("username")
+        .password("password")
+        .build()?;
     
     // Authenticate
     synods.authorize().await?;
